@@ -276,6 +276,12 @@ int mm_read_banner(FILE *f, MM_typecode *matcode)
     for (p=data_type; *p!='\0'; *p=tolower(*p),p++);
     for (p=storage_scheme; *p!='\0'; *p=tolower(*p),p++);
 
+
+    cout << "banner :" << banner << endl;
+    cout << "mtx :" << mtx << endl;
+    cout << "crd :" << crd << endl;
+    cout << "data_type :" << data_type << endl;
+
     /* check for banner */
     if (strncmp(banner, MatrixMarketBanner, strlen(MatrixMarketBanner)) != 0)
         return MM_NO_HEADER;

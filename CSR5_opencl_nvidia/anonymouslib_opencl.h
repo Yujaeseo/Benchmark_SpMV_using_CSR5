@@ -13,15 +13,16 @@ class anonymouslibHandle
 {
 public:
     anonymouslibHandle(ANONYMOUSLIB_IT m, ANONYMOUSLIB_IT n);
-    int setOCLENV(cl_context _ocl_context, cl_command_queue _ocl_command_queue);
+    int setOCLENV(cl_context &_ocl_context, cl_command_queue &_ocl_command_queue);
     int warmup();
-    int inputCSR(ANONYMOUSLIB_IT  nnz, cl_mem csr_row_pointer, cl_mem csr_column_index, cl_mem csr_value);
+    int inputCSR(ANONYMOUSLIB_IT  &nnz, cl_mem &csr_row_pointer, cl_mem &csr_column_index, cl_mem &csr_value);
     int asCSR();
     int asCSR5();
     int setX(cl_mem x);
     int spmv(const ANONYMOUSLIB_VT alpha, cl_mem y, double *time);
     int destroy();
     int setSigma(int sigma);
+    int printCsr();
 
 private:
     cl_context          _ocl_context;
@@ -92,10 +93,10 @@ int anonymouslibHandle<ANONYMOUSLIB_IT, ANONYMOUSLIB_UIT, ANONYMOUSLIB_VT>::warm
 }
 
 template <class ANONYMOUSLIB_IT, class ANONYMOUSLIB_UIT, class ANONYMOUSLIB_VT>
-int anonymouslibHandle<ANONYMOUSLIB_IT, ANONYMOUSLIB_UIT, ANONYMOUSLIB_VT>::inputCSR(ANONYMOUSLIB_IT  nnz,
-                                                                     cl_mem csr_row_pointer,
-                                                                     cl_mem csr_column_index,
-                                                                     cl_mem csr_value)
+int anonymouslibHandle<ANONYMOUSLIB_IT, ANONYMOUSLIB_UIT, ANONYMOUSLIB_VT>::inputCSR(ANONYMOUSLIB_IT  &nnz,
+                                                                     cl_mem &csr_row_pointer,
+                                                                     cl_mem &csr_column_index,
+                                                                     cl_mem &csr_value)
 {
     _format = ANONYMOUSLIB_FORMAT_CSR;
 
@@ -168,18 +169,22 @@ int anonymouslibHandle<ANONYMOUSLIB_IT, ANONYMOUSLIB_UIT, ANONYMOUSLIB_VT>::asCS
             return ANONYMOUSLIB_UNSUPPORTED_CSR5_OMEGA;
 
         int bit_all = _bit_y_offset + _bit_scansum_offset + _csr5_sigma;
+        cout << "bit_y_offset       : " << _bit_y_offset << endl;
+        cout << "bit_scansum_offset : " << _bit_scansum_offset << endl;
+        cout << "csr_sigma          : " << _csr5_sigma << endl;
+        cout << "total bit          : " << bit_all << endl;
         _num_packet = ceil((double)bit_all / (double)(sizeof(ANONYMOUSLIB_UIT) * 8));
-        //cout << "#num_packet = " << _num_packet << endl;
+        cout << "#num_packet = " << _num_packet << endl;
 
         // calculate the number of partitions
         _p = ceil((double)_nnz / (double)(ANONYMOUSLIB_CSR5_OMEGA * _csr5_sigma));
-        //cout << "#partition = " << _p << endl;
+        cout << "#partition = " << _p << endl;
 
         malloc_timer.start();
         // malloc the newly added arrays for CSR5
         _csr5_partition_pointer = clCreateBuffer(_ocl_context, CL_MEM_READ_WRITE, (_p + 1) * sizeof(ANONYMOUSLIB_UIT), NULL, &err);
         if(err != CL_SUCCESS) return err;
-
+        // packet은 tile의 한 column마다 존재하는 것?
         _csr5_partition_descriptor = clCreateBuffer(_ocl_context, CL_MEM_READ_WRITE, _p * ANONYMOUSLIB_CSR5_OMEGA * _num_packet * sizeof(ANONYMOUSLIB_UIT), NULL, &err);
         if(err != CL_SUCCESS) return err;
 
@@ -280,6 +285,57 @@ int anonymouslibHandle<ANONYMOUSLIB_IT, ANONYMOUSLIB_UIT, ANONYMOUSLIB_VT>::asCS
         cout << "CSR->CSR5 tile_desc time = " << tile_desc_time << " ms." << endl;
         cout << "CSR->CSR5 transpose time = " << transpose_time << " ms." << endl;
 
+        ANONYMOUSLIB_IT *partition_descriptor_offset = new ANONYMOUSLIB_IT[_num_offsets]; 
+        ANONYMOUSLIB_UIT *partition_pointer = new ANONYMOUSLIB_UIT[_p+1];
+        ANONYMOUSLIB_UIT *partition_descriptor = new ANONYMOUSLIB_UIT[_p * ANONYMOUSLIB_CSR5_OMEGA * _num_packet];
+
+        err = clEnqueueReadBuffer(_ocl_command_queue, _csr5_partition_descriptor_offset, CL_TRUE, 0, _num_offsets * sizeof(ANONYMOUSLIB_IT), partition_descriptor_offset, 0, NULL, NULL);
+        if(err != CL_SUCCESS) return err;
+
+        err = clEnqueueReadBuffer(_ocl_command_queue, _csr5_partition_pointer, CL_TRUE, 0, _p+1 * sizeof(ANONYMOUSLIB_UIT), partition_pointer, 0, NULL, NULL);
+        if(err != CL_SUCCESS) return err;
+
+        err =clEnqueueReadBuffer(_ocl_command_queue, _csr5_partition_descriptor, CL_TRUE, 0, _p * ANONYMOUSLIB_CSR5_OMEGA * _num_packet * sizeof(ANONYMOUSLIB_UIT), partition_descriptor, 0, NULL, NULL);
+        if(err != CL_SUCCESS) return err;
+
+        for (int i = 0; i < _p; i++){printf("%u ", partition_pointer[i]);}
+        
+        cout << "\n";
+//        _csr5_partition_descriptor_offset_pointer = clCreateBuffer(_ocl_context, CL_MEM_READ_WRITE, (_p + 1) * sizeof(ANONYMOUSLIB_IT), NULL, &err);
+        
+        for (int i = 0 ; i < _p * ANONYMOUSLIB_CSR5_OMEGA * _num_packet; i++){
+            ANONYMOUSLIB_UIT temp_val =  partition_descriptor[i];
+            unsigned int y_offset = 0;
+            y_offset |= (temp_val >> (32 - _bit_y_offset));
+            printf("%u ", y_offset);
+        }
+
+        cout << "\n";
+
+        for (int i = 0; i <_p * ANONYMOUSLIB_CSR5_OMEGA * _num_packet; i++){
+            ANONYMOUSLIB_UIT temp_val =  partition_descriptor[i];
+            unsigned int seg_offset = 0;
+            seg_offset = temp_val << (_bit_y_offset);
+            seg_offset = (seg_offset >> (32 - (_bit_scansum_offset)));
+            printf("%u ", seg_offset);
+        }
+
+        cout << "\n";
+        cout << "num offset :" << _num_offsets << endl;
+        // for (int i = 0; i < _num_offsets; i++){
+        //     printf("%d ", partition_descriptor_offset[i]);
+        // }
+
+        cout << "\n";
+    // d_csrRowPtrA = clCreateBuffer(cxGpuContext, CL_MEM_READ_ONLY, (m+1) * sizeof(int), NULL, &err);
+    // if(err != CL_SUCCESS) return err;
+    // d_csrColIdxA = clCreateBuffer(cxGpuContext, CL_MEM_READ_ONLY, nnzA  * sizeof(int), NULL, &err);
+    // if(err != CL_SUCCESS) return err;
+    // d_csrValA    = clCreateBuffer(cxGpuContext, CL_MEM_READ_ONLY, nnzA  * sizeof(VALUE_TYPE), NULL, &err);
+    // if(err != CL_SUCCESS) return err;
+
+
+
         _format = ANONYMOUSLIB_FORMAT_CSR5;
     }
 
@@ -325,6 +381,37 @@ int anonymouslibHandle<ANONYMOUSLIB_IT, ANONYMOUSLIB_UIT, ANONYMOUSLIB_VT>::spmv
     }
 
     return err;
+}
+
+template <class ANONYMOUSLIB_IT, class ANONYMOUSLIB_UIT, class ANONYMOUSLIB_VT>
+int anonymouslibHandle<ANONYMOUSLIB_IT, ANONYMOUSLIB_UIT, ANONYMOUSLIB_VT>::printCsr()
+{
+    int err = ANONYMOUSLIB_SUCCESS;
+
+    int *csrRowPtrA = new int [_m+1];
+    int *csrColIdxA = new int [_nnz];
+    int *csrValA = new int [_nnz];
+
+    err = clEnqueueReadBuffer(_ocl_command_queue, _csr_row_pointer, CL_TRUE, 0, _m+1 * sizeof(int), csrRowPtrA, 0, NULL, NULL);
+    if(err != CL_SUCCESS) return err;
+
+    err = clEnqueueReadBuffer(_ocl_command_queue, _csr_column_index, CL_TRUE, 0, _nnz * sizeof(int), csrColIdxA, 0, NULL, NULL);
+    if(err != CL_SUCCESS) return err;
+
+    err = clEnqueueReadBuffer(_ocl_command_queue, _csr_value, CL_TRUE, 0, _nnz * sizeof(int), csrValA, 0, NULL, NULL);
+    if(err != CL_SUCCESS) return err;
+
+    // // ========================== PRINT CSR FORMAT ================================
+    // cout << "Matrix values: ";
+    // for (int i = 0; i < _nnz; i++){printf("%d ",csrValA[i]);}
+    // cout << "\n";
+    // cout << "Column index: ";
+    // for (int i = 0; i < _nnz; i++){cout << csrColIdxA[i] << " ";}
+    // cout << "\n";
+    // cout << "Row pointer: ";
+    // for (int i = 0; i < _m+1; i++){cout << csrRowPtrA[i] << " ";}
+    // cout << "\n";
+    // // ========================== PRINT CSR FORMAT ================================
 }
 
 template <class ANONYMOUSLIB_IT, class ANONYMOUSLIB_UIT, class ANONYMOUSLIB_VT>
@@ -488,8 +575,8 @@ int anonymouslibHandle<ANONYMOUSLIB_IT, ANONYMOUSLIB_UIT, ANONYMOUSLIB_VT>::comp
 }
 
 template <class ANONYMOUSLIB_IT, class ANONYMOUSLIB_UIT, class ANONYMOUSLIB_VT>
-int anonymouslibHandle<ANONYMOUSLIB_IT, ANONYMOUSLIB_UIT, ANONYMOUSLIB_VT>::setOCLENV(cl_context       ocl_context,
-                                                                      cl_command_queue ocl_command_queue)
+int anonymouslibHandle<ANONYMOUSLIB_IT, ANONYMOUSLIB_UIT, ANONYMOUSLIB_VT>::setOCLENV(cl_context       &ocl_context,
+                                                                      cl_command_queue &ocl_command_queue)
 {
     int err = ANONYMOUSLIB_SUCCESS;
 

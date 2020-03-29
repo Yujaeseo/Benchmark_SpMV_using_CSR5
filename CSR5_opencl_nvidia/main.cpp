@@ -150,10 +150,20 @@ int call_anonymouslib(int m, int n, int nnzA,
     err = clEnqueueWriteBuffer(cqGpuCommandQueue, d_y_bench, CL_TRUE, 0, m  * sizeof(VALUE_TYPE), y, 0, NULL, NULL);
     if(err != CL_SUCCESS) return err;
 
-
-
-
     double time = 0;
+
+    // // ========================== PRINT CSR FORMAT ================================
+    // cout << "Matrix values: ";
+    // for (int i = 0; i < nnzA; i++){cout << csrValA[i] << " ";}
+    // cout << "\n";
+    // cout << "Column index: ";
+    // for (int i = 0; i < nnzA; i++){cout << csrColIdxA[i] << " ";}
+    // cout << "\n";
+    // cout << "Row pointer: ";
+    // for (int i = 0; i < m+1; i++){cout << csrRowPtrA[i] << " ";}
+    // cout << "\n";
+    // // ========================== PRINT CSR FORMAT ================================
+
 
     anonymouslibHandle<int, unsigned int, VALUE_TYPE> A(m, n);
     err = A.setOCLENV(cxGpuContext, cqGpuCommandQueue);
@@ -161,17 +171,17 @@ int call_anonymouslib(int m, int n, int nnzA,
 
     err = A.inputCSR(nnzA, d_csrRowPtrA, d_csrColIdxA, d_csrValA);
     //cout << "inputCSR err = " << err << endl;
+    A.printCsr();
 
     err = A.setX(d_x); // you only need to do it once!
     //cout << "setX err = " << err << endl;
 
-    err = A.setSigma(ANONYMOUSLIB_AUTO_TUNED_SIGMA);
+    err = A.setSigma(2);
     //cout << "setSigma err = " << err << endl;
 
     // warmup device
     A.warmup();
     err = clFinish(cqGpuCommandQueue);
-
     anonymouslib_timer asCSR5_timer;
     asCSR5_timer.start();
 
@@ -256,7 +266,6 @@ int main(int argc, char ** argv)
 
     cout << "PRECISION = " << precision << endl;
     cout << "------------------------------------------------------" << endl;
-
     //ex: ./spmv webbase-1M.mtx
     int argi = 1;
 
@@ -327,7 +336,7 @@ int main(int argc, char ** argv)
         int idxi, idxj;
         double fval;
         int ival;
-
+        
         if (isReal)
             fscanf(f, "%d %d %lg\n", &idxi, &idxj, &fval);
         else if (isInteger)
@@ -353,7 +362,7 @@ int main(int argc, char ** argv)
 
     if (f != stdin)
         fclose(f);
-
+    
     if (isSymmetric)
     {
         for (int i = 0; i < nnzA_mtx_report; i++)
@@ -437,7 +446,7 @@ int main(int argc, char ** argv)
 
     VALUE_TYPE *x = (VALUE_TYPE *)malloc(n * sizeof(VALUE_TYPE));
     for (int i = 0; i < n; i++)
-        x[i] = 1; //rand() % 10;
+        x[i] = 2; //rand() % 10;
 
     VALUE_TYPE *y = (VALUE_TYPE *)malloc(m * sizeof(VALUE_TYPE));
     VALUE_TYPE *y_ref = (VALUE_TYPE *)malloc(m * sizeof(VALUE_TYPE));
@@ -462,7 +471,7 @@ int main(int argc, char ** argv)
             y_ref[i] = sum;
         }
     }
-
+    //Bandwidth and throughput 정하는 법 알아보기
     double ref_time = ref_timer.stop() / (double)ref_iter;
     cout << "cpu sequential time = " << ref_time
          << " ms. Bandwidth = " << gb/(1.0e+6 * ref_time)

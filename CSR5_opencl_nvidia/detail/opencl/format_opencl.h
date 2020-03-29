@@ -64,6 +64,7 @@ int generate_partition_pointer(cl_kernel           ocl_kernel_generate_partition
     size_t szGlobalWorkSize[1];
 
     int num_threads = 128;
+    //p => the number of tiles
     int num_blocks  = ceil((double)(p + 1) / (double)num_threads);
 
     szLocalWorkSize[0]  = num_threads;
